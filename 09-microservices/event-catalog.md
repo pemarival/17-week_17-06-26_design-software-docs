@@ -1,1 +1,169 @@
-# Catálogo de eventos`n`n> Estado: 🟡 En progreso | Última actualización: 2026-06-22`n> Autor: Por definir | Equipo: Por definir`n`n## Estructura de evento`n`nTodo evento sigue este envelope:`n`n```json`n{`n  \"id\": \"evt-uuid\",`n  \"type\": \"dominio.entidad.verbo\",`n  \"version\": \"1.0\",`n  \"timestamp\": \"2026-06-22T14:30:00Z\",`n  \"userId\": \"usr-001\",`n  \"source\": \"iam-service\",`n  \"payload\": { /* datos específicos */ },`n  \"metadata\": {`n    \"correlationId\": \"corr-uuid\",`n    \"causationId\": \"evt-uuid-anterior\",`n    \"environment\": \"production\"`n  }`n}`n````n`n## Catálogo por servicio`n`n### IAM Service`n`n| Evento | Disparador | Consumidores | Payload |`n|---|---|---|---|`n| `iam.usuario.creado` | Usuario registrado | Audit, Notifications | usuarioId, email, rol, timestamp |`n| `iam.usuario.desactivado` | Admin desactiva usuario | Scheduling, Audit, Notifications | usuarioId, razon |`n| `iam.sesion.iniciada` | Login exitoso | Audit, Monitoring | usuarioId, ip, userAgent |`n| `iam.rol.modificado` | Cambio en permisos de rol | Audit, todos (revalidar) | rolId, permisosAntes, permisosAhora |`n`n### Reference Data Service`n`n| Evento | Disparador | Consumidores | Payload |`n|---|---|---|---|`n| `refdata.parametro.actualizado` | Admin actualiza parámetro | Audit, Scheduling (invalida caché) | parametroKey, valorAntes, valorAhora |`n| `refdata.centro.registrado` | Nuevo centro agregado | Audit, Notifications | centroId, nombre |`n| `refdata.centro.modificado` | Centro editado | Audit, todos (caché) | centroId, cambios |`n`n### Academic Management Service`n`n| Evento | Disparador | Consumidores | Payload |`n|---|---|---|---|`n| `academic.ficha.creada` | Nueva ficha registrada | Scheduling, Audit, Notifications | fichaId, programa, centro, jornada, coordinador |`n| `academic.ficha.modificada` | Cambio en ficha | Scheduling, Audit, Notifications, Monitoring | fichaId, cambios (antes/ahora) |`n| `academic.ficha.finalizada` | Cierre de ficha | Documents (certificados), Audit, Monitoring, Notifications | fichaId, fecha |`n| `academic.competencia.modificada` | Cambio en competencia | Scheduling (invalida caché), Audit | competenciaId, cambios |`n| `academic.rap.modificado` | RAP editado | Scheduling, Document, Audit | rapId, cambios |`n| `academic.aprendiz.asignado` | Aprendiz inscrito en ficha | Audit, Notifications, Monitoring | aprendizId, fichaId |`n`n### Training Environment Service`n`n| Evento | Disparador | Consumidores | Payload |`n|---|---|---|---|`n| `env.ambiente.creado` | Nuevo ambiente registrado | Scheduling, Audit | ambienteId, nombre, capacidad, centro |`n| `env.ambiente.nodisponible` | Ambiente en mantenimiento | Scheduling (generar conflictos), Audit, Notifications | ambienteId, fechaInicio, fechaFin, razon |`n| `env.ambiente.disponible` | Mantenimiento completado | Scheduling (revalidar), Audit | ambienteId |`n| `env.inventario.actualizado` | Cambio en recursos | Audit | ambienteId, recurso, cantidadAntes, cantidadAhora |`n`n### Actors Service`n`n| Evento | Disparador | Consumidores | Payload |`n|---|---|---|---|`n| `actors.instructor.registrado` | Nuevo instructor | Scheduling, Audit | instructorId, especialidades, centro |`n| `actors.instructor.modificado` | Cambio en instructor | Scheduling (revalidar asignaciones), Audit, Notifications | instructorId, cambios |`n| `actors.aprendiz.registrado` | Nuevo aprendiz | Academic, Audit, Monitoring | aprendizId, documento, nombre, centro |`n| `actors.empresa.registrada` | Empresa para etapa productiva | Audit | empresaId, razonSocial, nit |`n`n### Scheduling Service (CORE)`n`n| Evento | Disparador | Consumidores | Payload |`n|---|---|---|---|`n| `scheduling.horario.asignado` | Horario creado (sin conflictos) | Audit, Notifications, Documents, Monitoring | horarioId, fichaId, instructorId, ambienteId, franja |`n| `scheduling.horario.cancelado` | Cancelación de horario | Audit, Notifications, Monitoring | horarioId, razon |`n| `scheduling.conflicto.detectado` | Solapamiento encontrado | Audit, Notifications (alerta director) | conflictoId, tipo, horariosInvolucrados |`n| `scheduling.sesion.completada` | Sesión de clase finalizada | Audit, Monitoring (KPI), Documents | sesionId, aprendicesPresentes |`n| `scheduling.motor.ejecutado` | Algoritmo de asignación termina | Audit, Notifications (sugerencias) | fichaId, horariosAsignados, conflictosEncontrados |`n`n### Document Service`n`n| Evento | Disparador | Consumidores | Payload |`n|---|---|---|---|`n| `document.documento.generado` | PDF creado | Audit, Notifications (usuario) | documentoId, tipo, destinatarioId, urlDescarga |`n| `document.documento.descargado` | Usuario descarga | Audit, Monitoring | documentoId, usuarioId |`n| `document.documento.archivado` | Documento obsoleto marcado | Audit | documentoId, razon |`n`n### Monitoring Service`n`n| Evento | Disparador | Consumidores | Payload |`n|---|---|---|---|`n| `monitoring.kpi.calculado` | Cálculo diario 23:59 | Audit, Notifications (si hay alertas) | fecha, kpis (ocupacion, cargaInstructor, eficiencia) |`n| `monitoring.alerta.generada` | KPI cruza umbral | Audit, Notifications, Dashboard | alertaId, tipo, kpi, valor, umbral, entidadAfectada |`n| `monitoring.notificacion.enviada` | Mensaje enviado | Audit | notificacionId, usuarioId, tipo, canal |`n`n### Audit Service`n`n| Evento | Disparador | Consumidores | Payload |`n|---|---|---|---|`n| `audit.operacion.registrada` | (Recibe todos los eventos) | BD append-only | timestamp, usuarioId, accion, entidad, cambios |`n`n## Ejemplo: Flujo completo de creación de ficha`n`n````n1. Usuario crea ficha via academic-api`n   ↓`n2. Academic-service publica:`n   \"academic.ficha.creada\"`n   {`n     \"fichaId\": \"F123\",`n     \"programa\": \"ADSO\",`n     \"centro\": \"C001\",`n     \"jornada\": \"MANANA\",`n     \"coordinador\": \"U456\"`n   }`n   ↓`n3. Múltiples consumidores reaccionan en paralelo:`n`n   ├─ Scheduling-service:`n      ├─ Escucha evento`n      ├─ Prepara matriz de horarios`n      └─ Publica \"scheduling.motor.ejecutado\"`n   │`n   ├─ Audit-service:`n      ├─ Escucha evento`n      ├─ Crea registro append-only`n      └─ (fin)`n   │`n   └─ Notifications-service:`n      ├─ Escucha evento`n      ├─ Envía email coordinador`n      └─ Publica \"monitoring.notificacion.enviada\"`n````n`n## Garantías de entrega`n`n- **At-least-once:** Cada evento se entrega mínimo una vez`n- **Idempotencia:** Los consumidores deben ser idempotentes (pueden procesar duplicados)`n- **Ordenamiento:** FIFO por fichaId (partición)`n- **Timeout:** Si evento no se procesa en 5 minutos, va a Dead Letter Queue`n`n## Versionado de eventos`n`nSi el schema de evento cambia:`n`n1. Crear nueva versión: `academic.ficha.creada@2.0``n2. Antiguos consumidores aún escuchan `@1.0``n3. Nuevos consumidores escuchan `@2.0``n4. Bridge puede traducir si es necesario`n5. Deprecar `@1.0` después de 6 meses"
+# Catálogo de eventos
+
+> Estado: 🟡 En progreso
+> Última actualización: 2026-06-22
+> Autor: Por definir
+> Equipo: Por definir
+
+## Estructura de evento
+
+Todo evento sigue este *envelope*:
+
+```json
+{
+  "id": "evt-uuid",
+  "type": "dominio.entidad.verbo",
+  "version": "1.0",
+  "timestamp": "2026-06-22T14:30:00Z",
+  "userId": "usr-001",
+  "source": "iam-service",
+  "payload": {},
+  "metadata": {
+    "correlationId": "corr-uuid",
+    "causationId": "evt-uuid-anterior",
+    "environment": "production"
+  }
+}
+```
+
+---
+
+## Catálogo por servicio
+
+### IAM Service
+
+| Evento                  | Disparador              | Consumidores                     | Payload                             |
+| ----------------------- | ----------------------- | -------------------------------- | ----------------------------------- |
+| iam.usuario.creado      | Usuario registrado      | Audit, Notifications             | usuarioId, email, rol, timestamp    |
+| iam.usuario.desactivado | Admin desactiva usuario | Scheduling, Audit, Notifications | usuarioId, razon                    |
+| iam.sesion.iniciada     | Login exitoso           | Audit, Monitoring                | usuarioId, ip, userAgent            |
+| iam.rol.modificado      | Cambio en permisos      | Audit, todos (revalidar)         | rolId, permisosAntes, permisosAhora |
+
+### Reference Data Service
+
+| Evento                        | Disparador                | Consumidores                       | Payload                              |
+| ----------------------------- | ------------------------- | ---------------------------------- | ------------------------------------ |
+| refdata.parametro.actualizado | Admin actualiza parámetro | Audit, Scheduling (invalida caché) | parametroKey, valorAntes, valorAhora |
+| refdata.centro.registrado     | Nuevo centro agregado     | Audit, Notifications               | centroId, nombre                     |
+| refdata.centro.modificado     | Centro editado            | Audit, todos (caché)               | centroId, cambios                    |
+
+### Academic Management Service
+
+| Evento                          | Disparador             | Consumidores                                 | Payload                                         |
+| ------------------------------- | ---------------------- | -------------------------------------------- | ----------------------------------------------- |
+| academic.ficha.creada           | Nueva ficha registrada | Scheduling, Audit, Notifications             | fichaId, programa, centro, jornada, coordinador |
+| academic.ficha.modificada       | Cambio en ficha        | Scheduling, Audit, Notifications, Monitoring | fichaId, cambios                                |
+| academic.ficha.finalizada       | Cierre de ficha        | Documents, Audit, Monitoring, Notifications  | fichaId, fecha                                  |
+| academic.competencia.modificada | Cambio en competencia  | Scheduling (invalida caché), Audit           | competenciaId, cambios                          |
+| academic.rap.modificado         | RAP editado            | Scheduling, Document, Audit                  | rapId, cambios                                  |
+| academic.aprendiz.asignado      | Aprendiz inscrito      | Audit, Notifications, Monitoring             | aprendizId, fichaId                             |
+
+### Training Environment Service
+
+| Evento                     | Disparador                | Consumidores                     | Payload                                           |
+| -------------------------- | ------------------------- | -------------------------------- | ------------------------------------------------- |
+| env.ambiente.creado        | Nuevo ambiente            | Scheduling, Audit                | ambienteId, nombre, capacidad, centro             |
+| env.ambiente.nodisponible  | Ambiente en mantenimiento | Scheduling, Audit, Notifications | ambienteId, fechaInicio, fechaFin, razon          |
+| env.ambiente.disponible    | Mantenimiento completado  | Scheduling (revalidar), Audit    | ambienteId                                        |
+| env.inventario.actualizado | Cambio en recursos        | Audit                            | ambienteId, recurso, cantidadAntes, cantidadAhora |
+
+### Actors Service
+
+| Evento                       | Disparador           | Consumidores                     | Payload                               |
+| ---------------------------- | -------------------- | -------------------------------- | ------------------------------------- |
+| actors.instructor.registrado | Nuevo instructor     | Scheduling, Audit                | instructorId, especialidades, centro  |
+| actors.instructor.modificado | Cambio en instructor | Scheduling, Audit, Notifications | instructorId, cambios                 |
+| actors.aprendiz.registrado   | Nuevo aprendiz       | Academic, Audit, Monitoring      | aprendizId, documento, nombre, centro |
+| actors.empresa.registrada    | Empresa registrada   | Audit                            | empresaId, razonSocial, nit           |
+
+### Scheduling Service (CORE)
+
+| Evento                         | Disparador         | Consumidores                                | Payload                                              |
+| ------------------------------ | ------------------ | ------------------------------------------- | ---------------------------------------------------- |
+| scheduling.horario.asignado    | Horario creado     | Audit, Notifications, Documents, Monitoring | horarioId, fichaId, instructorId, ambienteId, franja |
+| scheduling.horario.cancelado   | Cancelación        | Audit, Notifications, Monitoring            | horarioId, razon                                     |
+| scheduling.conflicto.detectado | Solapamiento       | Audit, Notifications                        | conflictoId, tipo, horariosInvolucrados              |
+| scheduling.sesion.completada   | Clase finalizada   | Audit, Monitoring, Documents                | sesionId, aprendicesPresentes                        |
+| scheduling.motor.ejecutado     | Algoritmo finaliza | Audit, Notifications                        | fichaId, horariosAsignados, conflictosEncontrados    |
+
+### Document Service
+
+| Evento                        | Disparador         | Consumidores         | Payload                                        |
+| ----------------------------- | ------------------ | -------------------- | ---------------------------------------------- |
+| document.documento.generado   | PDF creado         | Audit, Notifications | documentoId, tipo, destinatarioId, urlDescarga |
+| document.documento.descargado | Usuario descarga   | Audit, Monitoring    | documentoId, usuarioId                         |
+| document.documento.archivado  | Documento obsoleto | Audit                | documentoId, razon                             |
+
+### Monitoring Service
+
+| Evento                          | Disparador        | Consumidores                    | Payload                                             |
+| ------------------------------- | ----------------- | ------------------------------- | --------------------------------------------------- |
+| monitoring.kpi.calculado        | Cálculo diario    | Audit, Notifications            | fecha, kpis                                         |
+| monitoring.alerta.generada      | KPI supera umbral | Audit, Notifications, Dashboard | alertaId, tipo, kpi, valor, umbral, entidadAfectada |
+| monitoring.notificacion.enviada | Mensaje enviado   | Audit                           | notificacionId, usuarioId, tipo, canal              |
+
+### Audit Service
+
+| Evento                     | Disparador               | Consumidores   | Payload                                        |
+| -------------------------- | ------------------------ | -------------- | ---------------------------------------------- |
+| audit.operacion.registrada | Recibe todos los eventos | BD append-only | timestamp, usuarioId, accion, entidad, cambios |
+
+---
+
+## Ejemplo: Flujo completo de creación de ficha
+
+```text
+1. Usuario crea ficha vía academic-api
+   ↓
+
+2. Academic-service publica:
+   "academic.ficha.creada"
+
+   {
+     "fichaId": "F123",
+     "programa": "ADSO",
+     "centro": "C001",
+     "jornada": "MANANA",
+     "coordinador": "U456"
+   }
+
+   ↓
+
+3. Consumidores reaccionan en paralelo
+
+├─ Scheduling-service
+│  ├─ Escucha evento
+│  ├─ Prepara matriz de horarios
+│  └─ Publica "scheduling.motor.ejecutado"
+
+├─ Audit-service
+│  ├─ Escucha evento
+│  └─ Guarda registro append-only
+
+└─ Notifications-service
+   ├─ Escucha evento
+   ├─ Envía email
+   └─ Publica "monitoring.notificacion.enviada"
+```
+
+---
+
+## Garantías de entrega
+
+* At-least-once → cada evento se entrega mínimo una vez
+* Idempotencia → consumidores toleran duplicados
+* Ordenamiento → FIFO por `fichaId`
+* Timeout → si falla en 5 minutos → Dead Letter Queue (DLQ)
+
+---
+
+## Versionado de eventos
+
+Si cambia el esquema:
+
+1. Crear nueva versión → `academic.ficha.creada@2.0`
+2. Consumidores antiguos escuchan `@1.0`
+3. Consumidores nuevos escuchan `@2.0`
+4. Bridge traduce si es necesario
+5. Deprecar `@1.0` después de 6 meses
+

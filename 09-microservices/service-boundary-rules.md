@@ -1,1 +1,317 @@
-# Reglas de límites entre servicios`n`n> Estado: 🟡 En progreso | Última actualización: 2026-06-22`n> Autor: Por definir | Equipo: Por definir`n`n## Principios`n`n1. **Autonomía:** Cada servicio es independiente; cambios internos no afectan otros`n2. **Aislamiento de datos:** No compartir BDs, no acceso directo a tablas ajenas`n3. **Comunicación clara:** APIs bien definidas (REST, gRPC, eventos)`n4. **Responsabilidad única:** Un servicio = un contexto de dominio`n5. **Contrato estable:** APIs son contrato; breaking changes requieren versionado`n`n## Límites permitidos`n`n### ✅ Comunicación entre servicios`n`n#### 1. REST (Lectura)`n````nScheduling → GET /api/v1/fichas/{fichaId}`n          → academic-management-service`n````n`n#### 2. gRPC (Operaciones internas heavy)`n````nScheduling → GetRaps(rapIds)`n          → academic-management-service`n````n`n#### 3. Eventos asincronos`n````nAcademic publica FichaCreada`n        → Scheduling escucha + reacciona`n        → Audit escucha + registra`n````n`n#### 4. Caché distribuido (Redis)`n````nScheduling cachea lista de competencias`n        → Invalida al escuchar CompetenciaModificada`n        → TTL: 4 horas máximo`n````n`n#### 5. Suscripción a eventos`n````nAudit se suscribe a TODOS los eventos`n    → No modifica, solo registra`n    → Append-only, nunca falla`n````n`n## Límites prohibidos`n`n### ❌ Acceso directo a BD`n`n```javascript`n// PROHIBIDO:`nconst fichas = db.query(``n  SELECT * FROM academic_db.fichas WHERE fichaId = $1`n`); // ← No: acceso directo a tabla ajena`n`n// PERMITIDO:`nconst ficha = await academicService.getFicha(fichaId);`n````n`n### ❌ Transacciones distribuidas`n`n```javascript`n// PROHIBIDO:`nconst trx = db.transaction();`ntry {`n  await scheduling.createHorario(trx, ...); // scheduling_db`n  await academic.updateFicha(trx, ...);     // academic_db ← PROHIBIDO`n  await trx.commit();`n} catch (e) {`n  await trx.rollback();`n}`n`n// PERMITIDO (eventual consistency):`nconst horario = await scheduling.createHorario(...);`nScheduling publica HorarioAsignado`n  → Academic escucha y actualiza su caché`n  → Consistencia eventual (< 5s)`n````n`n### ❌ Compartir estructuras de datos`n`n```typescript`n// PROHIBIDO:`ninterface Ficha {`n  id: string;`n  academicData: {`n    programa: string;`n    competencias: Competencia[]; // ← Acoplamiento directo`n  };`n  schedulingData: {`n    horarios: Horario[];`n  };`n}`n`n// PERMITIDO (DTO separado por límite):`ninterface FichaDTO {`n  id: string;`n  programa: string;`n  coordinador: string;`n}`n`ninterface HorarioDTO {`n  id: string;`n  fichaId: string;`n  franja: string;`n}`n````n`n### ❌ Breaking changes sin versionado`n`n```typescript`n// PROHIBIDO:`n// academic-management v2 elimina campo`ninterface CompetenciaV2 {`n  id: string;`n  nombre: string;`n  // ❌ ANTES: especialidad: string;`n}`n`n// PERMITIDO:`n// academic-management respeta v1 y expone v2`nGET /api/v1/competencias/{id} // Retorna schema v1`nGET /api/v2/competencias/{id} // Retorna schema v2`n// O header: Accept: application/vnd.competencia+json;version=2`n````n`n### ❌ Sincronización de datos en tiempo real entre BDs`n`n```javascript`n// PROHIBIDO:`n// Replicación bidireccional en vivo`nReplication {`n  source: academic_db,`n  target: scheduling_db,`n  mode: 'real-time'`n}`n`n// PERMITIDO:`n// Replicación unidireccional (eventos → caché)`nScheduling cachea datos académicos`n  → Se invalida al escuchar CompetenciaModificada`n````n`n## Límites por tipo de dato`n`n### Datos de referencia (Change rarely)`n- **Dueño:** reference-data-service`n- **Estrategia:** Caché distribuido (24h TTL)`n- **Acceso:** REST + caché`n`n**Ejemplo:** Centros, parámetros`n`n### Datos transaccionales (Change often)`n- **Dueño:** Servicio específico`n- **Estrategia:** Lectura por API, cambios por eventos`n- **Acceso:** REST para lectura, eventos para cambios`n`n**Ejemplo:** Horarios, fichas, instructores`n`n### Datos de auditoría (Write-only append)`n- **Dueño:** audit-service`n- **Estrategia:** Append-only, nunca lectura directa`n- **Acceso:** Evento entrada, BD interna append`n`n**Ejemplo:** Registro de auditoría`n`n### Datos calculados (Recomputable)`n- **Dueño:** Servicio que los calcula`n- **Estrategia:** Caché corto TTL (1-4h)`n- **Acceso:** REST para lectura, recalcular a demanda`n`n**Ejemplo:** KPIs, métricas`n`n## Patrones de evolución`n`n### Agregar un campo a API`n`n````n1. Agregar campo nuevo en v2 de la API`n2. Dejar v1 funcionando`n3. Clientes migran gradualmente`n4. Deprecar v1 después de 3 meses`n````n`n### Agregar un servicio nuevo`n`n````n1. Definir bounded context y responsabilidad`n2. Planificar qué datos replica de otros`n3. Definir eventos que publica/suscribe`n4. Implementar con DB propia (aislada)`n5. Integrar vía eventos y APIs`n6. Documentar en service-catalog.md`n````n`n### Refactorizar responsabilidad entre servicios`n`n````n1. Crear nuevo servicio con nueva responsabilidad`n2. Servicio antiguo replica datos del nuevo (eventual)`n3. Clientes migran gradualmente`n4. Desmantelar responsabilidad vieja del antiguo`n5. Cuando 100% migrado, deprecar servicio antiguo`n````n`n## Anti-patrones a evitar`n`n| Anti-patrón | Consecuencia | Alternativa |`n|---|---|---|`n| Servicio consulta 5+ servicios para 1 request | Lentitud, acoplamiento | Replicar datos vía eventos, caché |`n| Evento con payload > 10KB | Tráfico, latencia | Enviar ID, consumidor consulta detalles |`n| Circuito abierto > 30s | Cascada de fallos | Fallback a caché, graceful degradation |`n| Transacción distribuida | Deadlocks, timeouts | Saga, compensating transactions |`n| Compartir BD entre 2+ servicios | Acoplamiento directo | Cada uno su DB, comunicación por API |`n| Request síncrono en cadena (A→B→C→D) | Timeout cascada | Publicar evento, que cada uno reaccione |`n| Versionado ignorado en cambios | Breaking changes | Header Accept-Version, /api/v1/, /api/v2/ |`n`n## Checklist de compliance`n`nAntes de crear un servicio nuevo o cambiar límites:`n`n- [ ] ¿Cada servicio tiene su propia BD?`n- [ ] ¿Los cambios se comunican vía eventos o APIs?`n- [ ] ¿Hay APIs versionadas para breaking changes?`n- [ ] ¿Se documentan dependencias en dependency-map.md?`n- [ ] ¿Se registra el servicio en service-catalog.md?`n- [ ] ¿Se definen eventos en event-catalog.md?`n- [ ] ¿Hay caché distribuido para datos de referencia?`n- [ ] ¿Se implementó circuit breaker en llamadas síncronas?`n- [ ] ¿La responsabilidad del servicio está clara (bounded context)?"
+# Reglas de límites entre servicios
+
+> Estado: 🟡 En progreso
+> Última actualización: 2026-06-22
+> Autor: Por definir
+> Equipo: Por definir
+
+---
+
+## Principios
+
+1. **Autonomía:** Cada servicio es independiente; cambios internos no afectan otros.
+2. **Aislamiento de datos:** No compartir BDs ni acceder directamente a tablas ajenas.
+3. **Comunicación clara:** APIs bien definidas (REST, gRPC, eventos).
+4. **Responsabilidad única:** Un servicio = un contexto de dominio.
+5. **Contrato estable:** APIs son contrato; breaking changes requieren versionado.
+
+---
+
+## Límites permitidos
+
+### ✅ Comunicación entre servicios
+
+#### 1. REST (Lectura)
+
+```text id="restok"
+Scheduling
+   ↓ GET /api/v1/fichas/{fichaId}
+academic-management-service
+```
+
+#### 2. gRPC (Operaciones internas pesadas)
+
+```text id="grpca"
+Scheduling
+   ↓ GetRaps(rapIds)
+academic-management-service
+```
+
+#### 3. Eventos asíncronos
+
+```text id="evtok"
+Academic publica: FichaCreada
+
+├─ Scheduling escucha + reacciona
+└─ Audit escucha + registra
+```
+
+#### 4. Caché distribuido (Redis)
+
+```text id="cache1"
+Scheduling cachea lista de competencias
+↓
+Escucha CompetenciaModificada
+↓
+Invalida caché
+
+TTL máximo: 4 horas
+```
+
+#### 5. Suscripción a eventos
+
+```text id="audit1"
+Audit escucha TODOS los eventos
+
+• No modifica datos
+• Solo registra
+• Append-only
+```
+
+---
+
+## Límites prohibidos
+
+### ❌ Acceso directo a BD
+
+```javascript id="dbforbid"
+// PROHIBIDO
+const fichas = db.query(`
+SELECT * FROM academic_db.fichas
+WHERE fichaId = $1
+`);
+
+// ← acceso directo a tabla ajena
+
+
+// PERMITIDO
+const ficha =
+await academicService.getFicha(fichaId);
+```
+
+---
+
+### ❌ Transacciones distribuidas
+
+```javascript id="trxforbid"
+// PROHIBIDO
+
+const trx = db.transaction();
+
+try {
+  await scheduling.createHorario(trx);
+  await academic.updateFicha(trx);
+
+  await trx.commit();
+
+} catch {
+  await trx.rollback();
+}
+
+
+// PERMITIDO
+
+const horario =
+await scheduling.createHorario();
+
+Scheduling publica HorarioAsignado
+
+→ Academic escucha
+→ Actualiza caché
+
+Consistencia eventual (<5s)
+```
+
+---
+
+### ❌ Compartir estructuras de datos
+
+```typescript id="dtoforbid"
+// PROHIBIDO
+
+interface Ficha {
+  id: string;
+
+  academicData: {
+    programa: string;
+    competencias: Competencia[];
+  };
+
+  schedulingData: {
+    horarios: Horario[];
+  };
+}
+
+
+// PERMITIDO
+
+interface FichaDTO {
+  id: string;
+  programa: string;
+  coordinador: string;
+}
+
+interface HorarioDTO {
+  id: string;
+  fichaId: string;
+  franja: string;
+}
+```
+
+---
+
+### ❌ Breaking changes sin versionado
+
+```typescript id="versionforbid"
+// PROHIBIDO
+
+interface CompetenciaV2 {
+  id: string;
+  nombre: string;
+
+  // especialidad eliminado
+}
+
+
+// PERMITIDO
+
+GET /api/v1/competencias/{id}
+
+GET /api/v2/competencias/{id}
+
+
+// Alternativa:
+Accept:
+application/vnd.competencia+json;version=2
+```
+
+---
+
+### ❌ Sincronización de datos en tiempo real entre BDs
+
+```javascript id="repforbid"
+// PROHIBIDO
+
+Replication {
+ source: academic_db,
+ target: scheduling_db,
+ mode: "real-time"
+}
+
+
+// PERMITIDO
+
+Scheduling cachea datos académicos
+
+↓
+
+Escucha CompetenciaModificada
+
+↓
+
+Invalida caché
+```
+
+---
+
+## Límites por tipo de dato
+
+### Datos de referencia (Change rarely)
+
+* Dueño: `reference-data-service`
+* Estrategia: caché distribuido (TTL 24h)
+* Acceso: REST + caché
+
+Ejemplo: Centros, parámetros
+
+---
+
+### Datos transaccionales (Change often)
+
+* Dueño: servicio específico
+* Estrategia: lectura por API, cambios por eventos
+* Acceso: REST + eventos
+
+Ejemplo: Horarios, fichas, instructores
+
+---
+
+### Datos de auditoría (Write-only append)
+
+* Dueño: `audit-service`
+* Estrategia: append-only
+* Acceso: evento → BD interna
+
+Ejemplo: Registro de auditoría
+
+---
+
+### Datos calculados (Recomputable)
+
+* Dueño: servicio que calcula
+* Estrategia: caché corto (1–4h)
+* Acceso: REST + recálculo
+
+Ejemplo: KPIs, métricas
+
+---
+
+## Patrones de evolución
+
+### Agregar un campo a API
+
+1. Crear campo nuevo en v2
+2. Mantener v1
+3. Migración gradual
+4. Deprecar v1 después de 3 meses
+
+---
+
+### Agregar un servicio nuevo
+
+1. Definir bounded context
+2. Planificar replicación
+3. Definir eventos publicados/suscritos
+4. Crear BD propia
+5. Integrar por APIs/eventos
+6. Documentar en `service-catalog.md`
+
+---
+
+### Refactorizar responsabilidad
+
+1. Crear servicio nuevo
+2. Servicio antiguo replica datos
+3. Clientes migran
+4. Desmantelar responsabilidad vieja
+5. Deprecar servicio antiguo
+
+---
+
+## Anti-patrones a evitar
+
+| Anti-patrón                    | Consecuencia           | Alternativa          |
+| ------------------------------ | ---------------------- | -------------------- |
+| Servicio consulta 5+ servicios | Lentitud, acoplamiento | Replicar vía eventos |
+| Evento > 10KB                  | Latencia               | Enviar ID            |
+| Circuito abierto > 30s         | Cascada de fallos      | Caché + degradación  |
+| Transacción distribuida        | Deadlocks              | Saga                 |
+| Compartir BD                   | Acoplamiento           | Una BD por servicio  |
+| Cadena síncrona A→B→C→D        | Timeouts               | Eventos              |
+| Ignorar versionado             | Breaking changes       | `/v1`, `/v2`         |
+
+---
+
+## Checklist de compliance
+
+Antes de crear un servicio nuevo o cambiar límites:
+
+* [ ] ¿Cada servicio tiene su propia BD?
+* [ ] ¿Los cambios viajan por APIs o eventos?
+* [ ] ¿Hay versionado para breaking changes?
+* [ ] ¿Está documentado en `dependency-map.md`?
+* [ ] ¿Está registrado en `service-catalog.md`?
+* [ ] ¿Tiene eventos en `event-catalog.md`?
+* [ ] ¿Usa caché distribuido cuando aplica?
+* [ ] ¿Tiene circuit breaker?
+* [ ] ¿Está claro el bounded context?
