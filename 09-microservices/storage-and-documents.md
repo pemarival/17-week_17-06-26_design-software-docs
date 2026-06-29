@@ -11,9 +11,9 @@
 
 ### Database per Service
 
-Cada servicio tiene su propia base de datos independiente.
+Cada servicio tiene su propia base de datos independiente:
 
-| Servicio                     | Base de datos | Motor                    | Propósito                             |
+| Servicio                     | BD            | Motor                    | Propósito                             |
 | ---------------------------- | ------------- | ------------------------ | ------------------------------------- |
 | iam-service                  | iam_db        | PostgreSQL               | Usuarios, roles, sesiones             |
 | reference-data-service       | ref_db        | PostgreSQL               | Centros, regiones, parámetros         |
@@ -22,7 +22,7 @@ Cada servicio tiene su propia base de datos independiente.
 | scheduling-service           | scheduling_db | PostgreSQL               | Horarios, sesiones, conflictos        |
 | actors-service               | actors_db     | PostgreSQL               | Instructores, aprendices, empresas    |
 | document-service             | document_db   | PostgreSQL               | Documentos, plantillas, versiones     |
-| monitoring-service           | monitoring_db | PostgreSQL               | KPIs, alertas, métricas               |
+| monitoring-service           | monitoring_db | PostgreSQL               | KPIs, alertas, métricas históricas    |
 | audit-service                | audit_db      | PostgreSQL (append-only) | Auditoría inmutable                   |
 
 ---
@@ -31,61 +31,57 @@ Cada servicio tiene su propia base de datos independiente.
 
 Cuando un servicio necesita datos de otro:
 
-### Opción 1: Consulta síncrona (REST / gRPC)
+### Opción 1: Consulta síncrona (REST o gRPC)
 
-* Uso: validaciones en tiempo real
-* Ejemplo: `scheduling-service` valida instructor disponible en `actors-service`
+* Uso: Validaciones en tiempo real
+* Ejemplo: scheduling valida instructor disponible en actors-service
 
----
+### Opción 2: Replicación eventual (mediante eventos)
 
-### Opción 2: Replicación eventual (eventos)
-
-* Uso: datos consultados frecuentemente
-* Ejemplo: `scheduling-service` replica RAPs activos desde `academic-management-service`
-* Garantía: consistencia eventual (<5 segundos)
-
----
+* Uso: Datos frecuentemente consultados
+* Ejemplo: scheduling replica lista de RAPs activos desde academic-management
+* Garantía: Consistencia eventual (< 5 segundos)
 
 ### Opción 3: Caché compartido (Redis)
 
-* Uso: datos de referencia con pocos cambios
+* Uso: Datos de referencia que cambian poco
 * Ejemplo: centros, parámetros
 * TTL: 24 horas
 
 ---
 
-# Documentos y archivos
+## Documentos y archivos
 
-## Estructura en Cloud Storage
+### Estructura en Cloud Storage
 
-```text id="storage01"
+```text
 cloud-storage/
-
 ├── certificados/
-│   └── {fichaId}/{aprendizId}/
-│       ├── {ano}-{mes}-{dia}_certificado.pdf
-│       └── {ano}-{mes}-{dia}_certificado_v2.pdf
-
+│   ├── {fichaId}/{aprendizId}/
+│   │   ├── {ano}-{mes}-{dia}_certificado.pdf
+│   │   └── {ano}-{mes}-{dia}_certificado_v2.pdf
+│
 ├── diplomas/
-│   └── {fichaId}/{aprendizId}/
-│       └── {ano}-{mes}-{dia}_diploma.pdf
-
+│   ├── {fichaId}/{aprendizId}/
+│   │   └── {ano}-{mes}-{dia}_diploma.pdf
+│
 ├── reportes/
-│   └── {ano}/
-│       └── {mes}/
-│           ├── reporte_ocupacion_{dia}.pdf
-│           └── reporte_kpi_{dia}.xlsx
-
+│   ├── {ano}/
+│   │   ├── {mes}/
+│   │   │   ├── reporte_ocupacion_{dia}.pdf
+│   │   │   └── reporte_kpi_{dia}.xlsx
+│
 ├── plantillas/
 │   ├── certificado_base.docx
 │   ├── diploma_base.docx
 │   └── reporte_horarios_base.docx
-
+│
 └── temporales/
-    └── {sessionId}/
-        └── archivos_generacion
-           (limpieza automática 24h)
+    ├── {sessionId}/
+    │   └── archivos_generacion
 ```
+
+*(Los archivos temporales se eliminan automáticamente después de 24 horas.)*
 
 ---
 
@@ -93,20 +89,11 @@ cloud-storage/
 
 `document-service` gestiona:
 
-* Generación de PDFs desde plantillas
+* Generación de PDFs a partir de plantillas
 * Versionado de documentos
-* Almacenamiento en Cloud Storage
-* Ciclo de vida:
-
-```text id="doclife"
-borrador
-   ↓
-generado
-   ↓
-archivado
-```
-
-* Descarga y control de permisos
+* Almacenamiento en cloud storage
+* Ciclo de vida: borrador → generado → archivado
+* Descarga y acceso controlado por permisos
 
 ---
 
@@ -128,12 +115,10 @@ archivado
 
 **Variables**
 
-```text id="vars1"
-{nombreAprendiz}
-{documentoAprendiz}
-{competencias}
-{fecha}
-```
+* `{nombreAprendiz}`
+* `{documentoAprendiz}`
+* `{competencias}`
+* `{fecha}`
 
 ---
 
@@ -148,7 +133,9 @@ archivado
 
 * PDF de egresado
 
-Variables similares al certificado.
+**Variables**
+
+* Similares al certificado
 
 ---
 
@@ -161,7 +148,7 @@ Variables similares al certificado.
 
 **Salida**
 
-* PDF con horarios × instructor × ambiente
+* PDF con tabla horarios × instructor × ambiente
 
 ---
 
@@ -176,17 +163,15 @@ Variables similares al certificado.
 
 * XLSX con:
 
-* Ocupación
-
-* Carga de instructores
-
-* Eficiencia
+  * Ocupación
+  * Carga instructores
+  * Eficiencia
 
 ---
 
-# Retención de datos
+## Retención de datos
 
-## Datos transaccionales
+### Datos transaccionales
 
 | Entidad              | Retención | Motivo             |
 | -------------------- | --------- | ------------------ |
@@ -203,37 +188,34 @@ Variables similares al certificado.
 
 Jobs programados:
 
-* Diario (01:00) → eliminar temporales >24h
-* Semanal (domingo 02:00) → archivar auditoría >7 años
-* Mensual (día 1 — 03:00) → comprimir logs >30 días
+* Diariamente (01:00): eliminar archivos temporales > 24h
+* Semanalmente (domingo 02:00): archivar auditoría > 7 años
+* Mensualmente (primer día 03:00): comprimir logs > 30 días
 
 ---
 
-# Seguridad de datos
+## Seguridad de datos
 
-## Encriptación
+### Encriptación
 
-* En tránsito → TLS 1.3 (REST), mTLS (gRPC)
-* En reposo → AES-256
-* Llaves → rotación trimestral + Key Vault
+* En tránsito: TLS 1.3 para REST, mTLS para gRPC
+* En reposo: AES-256 para datos sensibles (documentos, auditoría)
+* Llaves: rotación trimestral, gestión en Key Vault
 
----
+### Backup
 
-## Backup
-
-* Frecuencia → diaria
-* RPO → <1 hora
-* RTO → <4 horas
+* Frecuencia: diaria para BDs transaccionales
+* RPO: < 1 hora
+* RTO: < 4 horas
 * Retención:
 
-  * 30 días (storage primario)
-  * 1 año (archivo)
-* Redundancia → multi-región (activa–pasiva)
+  * 30 días en storage primario
+  * 1 año en archivo
+* Redundancia: multi-región (activa–pasiva)
 
----
-
-## Compliance
+### Compliance
 
 * Cumplimiento SGPL (seguridad de la información)
-* Cumplimiento normativa SENA para datos de aprendices
+* Cumplimiento normativa SENA sobre datos de aprendices
 * Anonimización de PII en reportes analíticos
+
