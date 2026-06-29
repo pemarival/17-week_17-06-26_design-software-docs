@@ -1,1 +1,239 @@
-# Almacenamiento y gestión de documentos\n\n> Estado: 🟡 En progreso | Última actualización: 2026-06-22\n> Autor: Por definir | Equipo: Por definir\n\n## Estrategia de almacenamiento\n\n### Database per Service\n\nCada servicio tiene su propia base de datos independiente:\n\n| Servicio | BD | Motor | Propósito |\n|----------|----|----|----------|\n| iam-service | iam_db | PostgreSQL | Usuarios, roles, sesiones |\n| reference-data-service | ref_db | PostgreSQL | Centros, regiones, parámetros |\n| academic-management-service | academic_db | PostgreSQL | Programas, competencias, RAPs, fichas |\n| training-environment-service | env_db | PostgreSQL | Ambientes, inventario, disponibilidad |\n| scheduling-service | scheduling_db | PostgreSQL | Horarios, sesiones, conflictos |\n| actors-service | actors_db | PostgreSQL | Instructores, aprendices, empresas |\n| document-service | document_db | PostgreSQL | Documentos, plantillas, versiones |\n| monitoring-service | monitoring_db | PostgreSQL | KPIs, alertas, métricas históricas |\n| audit-service | audit_db | PostgreSQL (append-only) | Auditoría inmutable |\n\n### Replicación de datos\n\nCuando un servicio necesita datos de otro:\n\n1. **Opción 1: Consulta síncrona** (vía REST o gRPC)\n   - Uso: Validaciones en tiempo real\n   - Ejemplo: scheduling valida instructor disponible en actors-service\n\n2. **Opción 2: Replicación eventual** (mediante eventos)\n   - Uso: Datos frecuentemente consultados\n   - Ejemplo: scheduling replica lista de RAPs activos de academic-management\n   - Garantía: Consistencia eventual (< 5 segundos)\n\n3. **Opción 3: Caché compartido** (Redis)\n   - Uso: Datos de referencia que cambian poco\n   - Ejemplo: centros, parámetros\n   - TTL: 24 horas\n\n## Documentos y archivos\n\n### Estructura en Cloud Storage\n\n```\ncloud-storage/\n├── certificados/\n│   ├── {fichaId}/{aprendizId}/\n│   │   ├── {ano}-{mes}-{dia}_certificado.pdf\n│   │   └── {ano}-{mes}-{dia}_certificado.pdf (v2)\n│\n├── diplomas/\n│   ├── {fichaId}/{aprendizId}/\n│   │   └── {ano}-{mes}-{dia}_diploma.pdf\n│\n├── reportes/\n│   ├── {año}/\n│   │   ├── {mes}/\n│   │   │   ├── reporte_ocupacion_{dia}.pdf\n│   │   │   └── reporte_kpi_{dia}.xlsx\n│\n├── plantillas/\n│   ├── certificado_base.docx\n│   ├── diploma_base.docx\n│   ├── reporte_horarios_base.docx\n│\n└── temporales/\n    ├── {sessionId}/\n    │   └── (archivos de generación, se limpian después de 24h)\n```\n\n### Servicio de documentos\n\n**document-service** gestiona:\n- Generación de PDFs a partir de plantillas\n- Versionado de documentos\n- Almacenamiento en cloud storage\n- Ciclo de vida: borrador → generado → archivado\n- Descarga y acceso control de permisos\n\n### Plantillas\n\nBasadas en **templates renderizables**:\n\n**Certificado**\n- Entrada: Ficha ID, Aprendiz ID, RAPs completados\n- Salida: PDF con logo SENA, datos personales, competencias\n- Variables: `{nombreAprendiz}`, `{documentoAprendiz}`, `{competencias}`, `{fecha}`\n\n**Diploma**\n- Entrada: Ficha ID, Aprendiz ID\n- Salida: PDF de egresado\n- Variables: Similar a certificado\n\n**Reporte de horarios**\n- Entrada: Ficha ID, Rango de fechas\n- Salida: PDF con tabla horarios x instructor/ambiente\n\n**Reporte KPI**\n- Entrada: Centro ID, Fecha\n- Salida: XLSX con ocupación, carga instructores, eficiencia\n\n## Retención de datos\n\n### Datos transaccionales\n\n| Entidad | Retención | Motivo |\n|---------|-----------|--------|\n| Horarios completados | 7 años | Legal |\n| Auditoría | 7 años | Legal |\n| Documentos generados | 3 años | Consulta histórica |\n| Sesiones de usuario | 90 días | Compliance |\n| Logs de aplicación | 30 días | Troubleshooting |\n| Alertas vistas | 1 año | Histórico |\n\n### Limpieza automática\n\nJobs programados:\n- **Diariamente (01:00):** Eliminar archivos temporales > 24h\n- **Semanalmente (domingo 02:00):** Archivar auditoría > 7 años\n- **Mensualmente (primer día 03:00):** Comprimir logs > 30 días\n\n## Seguridad de datos\n\n### Encriptación\n\n- **En tránsito:** TLS 1.3 para REST, mTLS para gRPC\n- **En reposo:** AES-256 para datos sensibles (documentos, audit)\n- **Llaves:** Rotación trimestral, gestión en Key Vault\n\n### Backup\n\n- **Frecuencia:** Diaria para BD transaccionales\n- **RPO:** < 1 hora\n- **RTO:** < 4 horas\n- **Retención:** 30 días en storage primario, 1 año en archive\n- **Redundancia:** Multi-región (activa-pasiva)\n\n### Compliance\n\n- Cumplimiento SGPL (seguridad de la información)\n- Cumplimiento normativa SENA sobre datos de aprendices\n- Anonimización de PII en reportes analíticos"
+# Almacenamiento y gestión de documentos
+
+> Estado: 🟡 En progreso
+> Última actualización: 2026-06-22
+> Autor: Por definir
+> Equipo: Por definir
+
+---
+
+## Estrategia de almacenamiento
+
+### Database per Service
+
+Cada servicio tiene su propia base de datos independiente.
+
+| Servicio                     | Base de datos | Motor                    | Propósito                             |
+| ---------------------------- | ------------- | ------------------------ | ------------------------------------- |
+| iam-service                  | iam_db        | PostgreSQL               | Usuarios, roles, sesiones             |
+| reference-data-service       | ref_db        | PostgreSQL               | Centros, regiones, parámetros         |
+| academic-management-service  | academic_db   | PostgreSQL               | Programas, competencias, RAPs, fichas |
+| training-environment-service | env_db        | PostgreSQL               | Ambientes, inventario, disponibilidad |
+| scheduling-service           | scheduling_db | PostgreSQL               | Horarios, sesiones, conflictos        |
+| actors-service               | actors_db     | PostgreSQL               | Instructores, aprendices, empresas    |
+| document-service             | document_db   | PostgreSQL               | Documentos, plantillas, versiones     |
+| monitoring-service           | monitoring_db | PostgreSQL               | KPIs, alertas, métricas               |
+| audit-service                | audit_db      | PostgreSQL (append-only) | Auditoría inmutable                   |
+
+---
+
+## Replicación de datos
+
+Cuando un servicio necesita datos de otro:
+
+### Opción 1: Consulta síncrona (REST / gRPC)
+
+* Uso: validaciones en tiempo real
+* Ejemplo: `scheduling-service` valida instructor disponible en `actors-service`
+
+---
+
+### Opción 2: Replicación eventual (eventos)
+
+* Uso: datos consultados frecuentemente
+* Ejemplo: `scheduling-service` replica RAPs activos desde `academic-management-service`
+* Garantía: consistencia eventual (<5 segundos)
+
+---
+
+### Opción 3: Caché compartido (Redis)
+
+* Uso: datos de referencia con pocos cambios
+* Ejemplo: centros, parámetros
+* TTL: 24 horas
+
+---
+
+# Documentos y archivos
+
+## Estructura en Cloud Storage
+
+```text id="storage01"
+cloud-storage/
+
+├── certificados/
+│   └── {fichaId}/{aprendizId}/
+│       ├── {ano}-{mes}-{dia}_certificado.pdf
+│       └── {ano}-{mes}-{dia}_certificado_v2.pdf
+
+├── diplomas/
+│   └── {fichaId}/{aprendizId}/
+│       └── {ano}-{mes}-{dia}_diploma.pdf
+
+├── reportes/
+│   └── {ano}/
+│       └── {mes}/
+│           ├── reporte_ocupacion_{dia}.pdf
+│           └── reporte_kpi_{dia}.xlsx
+
+├── plantillas/
+│   ├── certificado_base.docx
+│   ├── diploma_base.docx
+│   └── reporte_horarios_base.docx
+
+└── temporales/
+    └── {sessionId}/
+        └── archivos_generacion
+           (limpieza automática 24h)
+```
+
+---
+
+## Servicio de documentos
+
+`document-service` gestiona:
+
+* Generación de PDFs desde plantillas
+* Versionado de documentos
+* Almacenamiento en Cloud Storage
+* Ciclo de vida:
+
+```text id="doclife"
+borrador
+   ↓
+generado
+   ↓
+archivado
+```
+
+* Descarga y control de permisos
+
+---
+
+## Plantillas
+
+### Certificado
+
+**Entrada**
+
+* Ficha ID
+* Aprendiz ID
+* RAPs completados
+
+**Salida**
+
+* PDF con logo SENA
+* Datos personales
+* Competencias
+
+**Variables**
+
+```text id="vars1"
+{nombreAprendiz}
+{documentoAprendiz}
+{competencias}
+{fecha}
+```
+
+---
+
+### Diploma
+
+**Entrada**
+
+* Ficha ID
+* Aprendiz ID
+
+**Salida**
+
+* PDF de egresado
+
+Variables similares al certificado.
+
+---
+
+### Reporte de horarios
+
+**Entrada**
+
+* Ficha ID
+* Rango de fechas
+
+**Salida**
+
+* PDF con horarios × instructor × ambiente
+
+---
+
+### Reporte KPI
+
+**Entrada**
+
+* Centro ID
+* Fecha
+
+**Salida**
+
+* XLSX con:
+
+* Ocupación
+
+* Carga de instructores
+
+* Eficiencia
+
+---
+
+# Retención de datos
+
+## Datos transaccionales
+
+| Entidad              | Retención | Motivo             |
+| -------------------- | --------- | ------------------ |
+| Horarios completados | 7 años    | Legal              |
+| Auditoría            | 7 años    | Legal              |
+| Documentos generados | 3 años    | Consulta histórica |
+| Sesiones de usuario  | 90 días   | Compliance         |
+| Logs de aplicación   | 30 días   | Troubleshooting    |
+| Alertas vistas       | 1 año     | Histórico          |
+
+---
+
+## Limpieza automática
+
+Jobs programados:
+
+* Diario (01:00) → eliminar temporales >24h
+* Semanal (domingo 02:00) → archivar auditoría >7 años
+* Mensual (día 1 — 03:00) → comprimir logs >30 días
+
+---
+
+# Seguridad de datos
+
+## Encriptación
+
+* En tránsito → TLS 1.3 (REST), mTLS (gRPC)
+* En reposo → AES-256
+* Llaves → rotación trimestral + Key Vault
+
+---
+
+## Backup
+
+* Frecuencia → diaria
+* RPO → <1 hora
+* RTO → <4 horas
+* Retención:
+
+  * 30 días (storage primario)
+  * 1 año (archivo)
+* Redundancia → multi-región (activa–pasiva)
+
+---
+
+## Compliance
+
+* Cumplimiento SGPL (seguridad de la información)
+* Cumplimiento normativa SENA para datos de aprendices
+* Anonimización de PII en reportes analíticos
