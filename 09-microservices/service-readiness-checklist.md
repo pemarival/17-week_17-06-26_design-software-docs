@@ -1,1 +1,279 @@
-# Checklist de preparación de servicios\n\n> Estado: 🟡 En progreso | Última actualización: 2026-06-22\n> Autor: Por definir | Equipo: Por definir\n\n## Propósito\n\nVerificación sistemática de que un microservicio está listo para:\n1. **Merge a rama main** (código)\n2. **Deploy a producción** (infraestructura, seguridad, operaciones)\n3. **Integración en sistema** (APIs, eventos, datos)\n\n## Fase 1: Documentación (Pre-desarrollo)\n\n### Definición del servicio\n\n- [ ] Bounded context definido (ver [domain-map.md](./domain-map.md))\n- [ ] Responsabilidad del servicio en una línea\n- [ ] Dependencias mapeadas (ver [dependency-map.md](./dependency-map.md))\n- [ ] ADR creada en `05-architecture/decisions/records/ADR-XXX-service-creation.md`\n- [ ] Servicio registrado en [service-catalog.md](./service-catalog.md)\n- [ ] Eventos documentados en [event-catalog.md](./event-catalog.md)\n- [ ] Datos mapeados en [data-ownership-matrix.md](./data-ownership-matrix.md)\n- [ ] Límites con otros servicios claros (ver [service-boundary-rules.md](./service-boundary-rules.md))\n\n## Fase 2: Implementación\n\n### Código y arquitectura\n\n- [ ] Estructura de carpetas sigue convención\n- [ ] Cada componente (api, worker, etc.) es independiente\n- [ ] BD propia creada (aislada, sin acceso compartido)\n- [ ] Conexión a BD usa pool (no conexión única)\n- [ ] Migración de schema está versionada\n- [ ] Modelos de dominio mapeados a schema\n\n### APIs\n\n- [ ] API definida en OpenAPI 3.0 (archivo `.yaml` en `07-api/contracts/openapi/`)\n- [ ] Endpoints documentados (descripción, parámetros, respuestas, errores)\n- [ ] Versionado: `/api/v1/` como prefijo\n- [ ] Códigos HTTP correctos (200, 201, 400, 404, 500, etc.)\n- [ ] Paginación implementada si retorna listas\n- [ ] Rate limiting configurado\n- [ ] CORS configurado (si aplica)\n\n### Seguridad\n\n- [ ] Autenticación vía JWT (token validado)\n- [ ] Autorización basada en roles\n- [ ] Entrada validada (schema, tipos, límites)\n- [ ] No hay credenciales en código\n- [ ] Secrets en Key Vault, no en config\n- [ ] HTTPS solo (TLS 1.3)\n- [ ] Logs no exponen PII o secrets\n\n### Calidad\n\n- [ ] Unit tests (coverage > 70%)\n- [ ] Integration tests (testcontainers para BD)\n- [ ] API tests (Postman, HTTP client)\n- [ ] Linting sin errores\n- [ ] SonarQube / code review aprobado\n- [ ] No hay deudas técnicas críticas\n\n### Observabilidad\n\n- [ ] Logs estructurados (JSON)\n- [ ] Niveles de log configurables (DEBUG, INFO, WARN, ERROR)\n- [ ] Rastreo distribuido (correlation ID)\n- [ ] Métricas expuestas (Prometheus /metrics)\n- [ ] Health checks (`/health`, `/ready`)\n- [ ] APM integrado (Application Insights, Jaeger, etc.)\n\n## Fase 3: Integración\n\n### Eventos\n\n- [ ] Publicador de eventos implementado\n- [ ] Suscriptor de eventos implementado (si aplica)\n- [ ] Idempotencia garantizada (deduplicación)\n- [ ] Dead Letter Queue configurada\n- [ ] Reintentos con exponential backoff\n- [ ] Timeout configurado (> 5 min)\n\n### Comunicación síncrona\n\n- [ ] Llamadas a otros servicios tienen circuit breaker\n- [ ] Fallback a caché si otro servicio falla\n- [ ] Timeout < 30 segundos\n- [ ] Retry con backoff en errores transitorios\n\n### BD y datos\n\n- [ ] BD propia creada en entorno (dev, qa, prod)\n- [ ] Credenciales de BD en Key Vault\n- [ ] Migración de schema automatizada\n- [ ] Backup/restore probado\n- [ ] Índices creados en columnas de búsqueda\n- [ ] Query performance aceptable (< 200ms para 99%ile)\n\n### Documentación\n\n- [ ] `README.md` completo en carpeta de servicio\n- [ ] `data-model.md` documenta entidades\n- [ ] `api-contract.md` documentado (o referencia OpenAPI)\n- [ ] `events.md` documenta eventos publicados/consumidos\n- [ ] `runbook.md` con deploy, rollback, troubleshooting\n- [ ] Todos archivos en 🟡 o 🟢 (no 🔴 Pendiente)\n\n## Fase 4: DevOps e Infraestructura\n\n### Containerización\n\n- [ ] Dockerfile multi-stage\n- [ ] Base image slim/alpine (< 300MB)\n- [ ] Health check en Dockerfile\n- [ ] Non-root user\n- [ ] Imagen builds sin errores\n- [ ] Imagen escanea vulnerabilidades (< 5 críticas)\n\n### Orquestación (Kubernetes si aplica)\n\n- [ ] Deployment manifest\n- [ ] Service manifest\n- [ ] ConfigMap para configuración\n- [ ] Secret para credenciales (vinculado a Key Vault)\n- [ ] Resource requests/limits\n- [ ] Autoscaling configurado (HPA)\n- [ ] Health probes (liveness, readiness)\n- [ ] Resource quotas respetadas\n\n### CI/CD\n\n- [ ] Pipeline automático (GitHub Actions, Azure Pipelines)\n- [ ] Build triggered en push a rama feature\n- [ ] Tests ejecutan antes de merge\n- [ ] Imagen se sube a registry (ACR)\n- [ ] Deploy automático a dev/qa\n- [ ] Deploy manual aprobado a prod (PAT)\n- [ ] Rollback automático si health checks fallan\n\n### Monitoreo\n\n- [ ] Application Insights / Datadog / New Relic configurado\n- [ ] Alertas en errores > 5% de requests\n- [ ] Alertas en latencia p99 > umbral\n- [ ] Dashboard creado (overview, errors, latency, dependencies)\n- [ ] SLA documentado (uptime, latency, error rate)\n\n### Operaciones\n\n- [ ] Runbook en servicio (deploy, rollback, troubleshooting)\n- [ ] Oncall rotation definida\n- [ ] Escalation path claro\n- [ ] Postmortem template listo (incident.md)\n- [ ] Backup automático (si BD transaccional)\n- [ ] Disaster recovery plan (RTO < 4h, RPO < 1h)\n\n## Fase 5: Producción\n\n### Validación previa\n\n- [ ] Smoke tests en prod (endpoint básico responde)\n- [ ] Datos de test completamente removidos\n- [ ] Credenciales reales en Key Vault (no hardcoded)\n- [ ] Logs van a almacenamiento centralizado\n- [ ] Alertas configuradas correctamente\n- [ ] Runbook y oncall notificados\n\n### Deployment\n\n- [ ] Blue-green deployment o canary\n- [ ] Rollback plan activado (si needed)\n- [ ] Versión de código tageada en Git\n- [ ] CHANGELOG actualizado\n- [ ] Release notes publicadas\n\n### Post-deployment\n\n- [ ] Monitoreo de errores durante 24h\n- [ ] Métricas de éxito evaluadas\n- [ ] Feedback de usuarios recolectado\n- [ ] Observaciones documentadas\n- [ ] Mejoras identificadas para v1.1\n\n## Checklist rápido (1 página)\n\n**Antes de merge a main:**\n- [ ] Documentación 🟡 o 🟢\n- [ ] Tests > 70%\n- [ ] Linting OK\n- [ ] No secrets en código\n- [ ] APIs versionadas\n- [ ] Eventos idempotentes\n- [ ] Circuit breaker + retries\n\n**Antes de prod:**\n- [ ] Dockerfile multi-stage < 300MB\n- [ ] Kubernetes manifests\n- [ ] CI/CD pipeline OK\n- [ ] Application Insights / moniteo\n- [ ] Backup/restore probado\n- [ ] Oncall notificado\n- [ ] Smoke tests OK\n\n**En producción:**\n- [ ] Monitorear 24h\n- [ ] Incident response listo\n- [ ] Métricas de éxito evaluadas\n- [ ] Retroalimentación documentada\n\n## Cambios después de producción\n\n| Cambio | Requiere... | Urgencia |\n|---|---|---|\n| Bug crítico (fallo 100%) | Hotfix, deploy inmediato | CRÍTICA |\n| Bug mayor (fallo > 10%) | Hotfix, deploy < 2h | ALTA |\n| Bug menor (fallo < 10%) | Siguiente release | NORMAL |\n| Feature nueva | Release planeado | NORMAL |\n| Breaking change API | Major version + deprecación | NORMAL |\n| Cambio de seguridad | Hotfix inmediato | CRÍTICA |\n\n## Estado de servicios\n\n- 🔴 **Pendiente:** Documentación no iniciada\n- 🟡 **En progreso:** Código en desarrollo o testing\n- 🟢 **Estable:** En producción, mantenido\n- ⚫ **Deprecado:** Reemplazado, sunset en progreso"
+# Checklist de preparación de servicios
+
+> Estado: 🟡 En progreso
+> Última actualización: 2026-06-22
+> Autor: Por definir
+> Equipo: Por definir
+
+---
+
+## Propósito
+
+Verificación sistemática de que un microservicio está listo para:
+
+1. Merge a rama `main` (código)
+2. Deploy a producción (infraestructura, seguridad, operaciones)
+3. Integración en sistema (APIs, eventos, datos)
+
+---
+
+# Fase 1: Documentación (Pre-desarrollo)
+
+## Definición del servicio
+
+* [ ] Bounded context definido (`domain-map.md`)
+* [ ] Responsabilidad del servicio definida en una línea
+* [ ] Dependencias mapeadas (`dependency-map.md`)
+* [ ] ADR creada (`05-architecture/decisions/records/ADR-XXX-service-creation.md`)
+* [ ] Servicio registrado en `service-catalog.md`
+* [ ] Eventos documentados en `event-catalog.md`
+* [ ] Datos mapeados en `data-ownership-matrix.md`
+* [ ] Límites claros (`service-boundary-rules.md`)
+
+---
+
+# Fase 2: Implementación
+
+## Código y arquitectura
+
+* [ ] Estructura de carpetas sigue convención
+* [ ] Componentes independientes (`api`, `worker`, etc.)
+* [ ] BD propia creada
+* [ ] Conexión usa pool
+* [ ] Migraciones versionadas
+* [ ] Modelos de dominio ↔ schema definidos
+
+---
+
+## APIs
+
+* [ ] OpenAPI 3.0 (`07-api/contracts/openapi/`)
+* [ ] Endpoints documentados
+* [ ] Prefijo `/api/v1/`
+* [ ] HTTP codes correctos
+* [ ] Paginación si aplica
+* [ ] Rate limiting
+* [ ] CORS configurado
+
+---
+
+## Seguridad
+
+* [ ] JWT validado
+* [ ] Autorización por roles
+* [ ] Validación de entrada
+* [ ] Sin credenciales en código
+* [ ] Secrets en Key Vault
+* [ ] HTTPS (TLS 1.3)
+* [ ] Logs sin exponer PII
+
+---
+
+## Calidad
+
+* [ ] Unit tests (>70%)
+* [ ] Integration tests
+* [ ] API tests
+* [ ] Linting limpio
+* [ ] SonarQube / code review aprobado
+* [ ] Sin deuda técnica crítica
+
+---
+
+## Observabilidad
+
+* [ ] Logs estructurados (JSON)
+* [ ] DEBUG / INFO / WARN / ERROR configurables
+* [ ] Correlation ID
+* [ ] Métricas (`/metrics`)
+* [ ] Health checks (`/health`, `/ready`)
+* [ ] APM integrado
+
+---
+
+# Fase 3: Integración
+
+## Eventos
+
+* [ ] Publicador implementado
+* [ ] Suscriptor implementado
+* [ ] Idempotencia garantizada
+* [ ] Dead Letter Queue
+* [ ] Retry con exponential backoff
+* [ ] Timeout configurado (>5 min)
+
+---
+
+## Comunicación síncrona
+
+* [ ] Circuit breaker
+* [ ] Fallback a caché
+* [ ] Timeout < 30 s
+* [ ] Retry para errores transitorios
+
+---
+
+## BD y datos
+
+* [ ] BD creada (dev / qa / prod)
+* [ ] Credenciales en Key Vault
+* [ ] Migraciones automáticas
+* [ ] Backup y restore probados
+* [ ] Índices creados
+* [ ] Query performance (<200ms p99)
+
+---
+
+## Documentación
+
+* [ ] `README.md`
+* [ ] `data-model.md`
+* [ ] `api-contract.md`
+* [ ] `events.md`
+* [ ] `runbook.md`
+* [ ] Todos los archivos en 🟡 o 🟢
+
+---
+
+# Fase 4: DevOps e Infraestructura
+
+## Containerización
+
+* [ ] Dockerfile multi-stage
+* [ ] Imagen <300MB
+* [ ] Health check
+* [ ] Usuario non-root
+* [ ] Build exitoso
+* [ ] Vulnerabilidades aceptables
+
+---
+
+## Orquestación (Kubernetes)
+
+* [ ] Deployment
+* [ ] Service
+* [ ] ConfigMap
+* [ ] Secret + Key Vault
+* [ ] Requests / Limits
+* [ ] HPA
+* [ ] Liveness / Readiness
+* [ ] Resource quotas
+
+---
+
+## CI/CD
+
+* [ ] Pipeline automático
+* [ ] Build en push
+* [ ] Tests antes de merge
+* [ ] Imagen publicada
+* [ ] Deploy automático dev / qa
+* [ ] Deploy manual prod
+* [ ] Rollback automático
+
+---
+
+## Monitoreo
+
+* [ ] Application Insights / Datadog / New Relic
+* [ ] Alertas >5% errores
+* [ ] Alertas latencia p99
+* [ ] Dashboard creado
+* [ ] SLA documentado
+
+---
+
+## Operaciones
+
+* [ ] Runbook disponible
+* [ ] Oncall definido
+* [ ] Escalation path
+* [ ] Postmortem template
+* [ ] Backup automático
+* [ ] Disaster recovery
+
+---
+
+# Fase 5: Producción
+
+## Validación previa
+
+* [ ] Smoke tests
+* [ ] Datos de prueba removidos
+* [ ] Secrets reales en Key Vault
+* [ ] Logs centralizados
+* [ ] Alertas verificadas
+* [ ] Runbook y oncall notificados
+
+---
+
+## Deployment
+
+* [ ] Blue-green o Canary
+* [ ] Rollback habilitado
+* [ ] Release tageada
+* [ ] CHANGELOG actualizado
+* [ ] Release notes publicadas
+
+---
+
+## Post-deployment
+
+* [ ] Monitoreo 24h
+* [ ] Métricas evaluadas
+* [ ] Feedback recolectado
+* [ ] Observaciones documentadas
+* [ ] Mejoras para v1.1
+
+---
+
+# Checklist rápido
+
+## Antes de merge a main
+
+* [ ] Documentación 🟡 o 🟢
+* [ ] Tests >70%
+* [ ] Linting OK
+* [ ] Sin secrets
+* [ ] APIs versionadas
+* [ ] Eventos idempotentes
+* [ ] Circuit breaker + retries
+
+## Antes de prod
+
+* [ ] Dockerfile multi-stage
+* [ ] Kubernetes manifests
+* [ ] CI/CD OK
+* [ ] Monitoreo configurado
+* [ ] Backup probado
+* [ ] Oncall notificado
+* [ ] Smoke tests
+
+## En producción
+
+* [ ] Monitorear 24h
+* [ ] Incident response listo
+* [ ] Métricas evaluadas
+* [ ] Retroalimentación documentada
+
+---
+
+## Cambios después de producción
+
+| Cambio              | Requiere         | Urgencia |
+| ------------------- | ---------------- | -------- |
+| Bug crítico (100%)  | Hotfix inmediato | CRÍTICA  |
+| Bug mayor (>10%)    | Hotfix <2h       | ALTA     |
+| Bug menor (<10%)    | Próximo release  | NORMAL   |
+| Feature nueva       | Release planeado | NORMAL   |
+| Breaking change API | Major version    | NORMAL   |
+| Cambio de seguridad | Hotfix inmediato | CRÍTICA  |
+
+---
+
+## Estado de servicios
+
+* 🔴 **Pendiente** → Documentación no iniciada
+* 🟡 **En progreso** → Desarrollo o testing
+* 🟢 **Estable** → Producción mantenida
+* ⚫ **Deprecado** → Reemplazado / sunset
